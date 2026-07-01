@@ -1,0 +1,6 @@
+bin/
+obj/
+# Never commit real PayOS keys. Use appsettings.Development.json (gitignored) or user-secrets.
+appsettings.Development.json
+appsettings.Production.json
+App_Data/

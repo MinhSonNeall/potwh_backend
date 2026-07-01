@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>PayosServer</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- PayOS official .NET SDK (namespace Net.payOS) -->
+    <PackageReference Include="payOS" Version="2.1.0" />
+  </ItemGroup>
+
+</Project>
