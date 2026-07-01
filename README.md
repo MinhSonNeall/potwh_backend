@@ -5,6 +5,7 @@ ASP.NET Core backend for PayOS payment links, payment webhooks, order tracking, 
 ## Requirements
 
 - .NET SDK 9.0
+- PostgreSQL
 - PayOS merchant credentials
 - A public HTTPS URL for webhook callbacks in development, such as an ngrok tunnel
 
@@ -15,7 +16,9 @@ Set these values in `appsettings.Development.json`, user secrets, or your deploy
 ```json
 {
   "AppBaseUrl": "https://your-public-url",
-  "DataFilePath": "App_Data/payos-store.json",
+  "ConnectionStrings": {
+    "DefaultConnection": "Host=localhost;Port=5432;Database=potwh_backend;Username=postgres;Password=postgres"
+  },
   "PayOS": {
     "ClientId": "your-client-id",
     "ApiKey": "your-api-key",
@@ -31,6 +34,8 @@ Set these values in `appsettings.Development.json`, user secrets, or your deploy
   ]
 }
 ```
+
+On Render, set `DATABASE_URL` to your Render Postgres internal database URL. The app creates the required `orders` and `balances` tables automatically on startup.
 
 ## Run
 
@@ -51,4 +56,4 @@ dotnet run
 
 ## Notes
 
-Orders and balances are stored in a local JSON file under `App_Data` by default. Replace this with a transactional database before production use.
+Orders and balances are stored in PostgreSQL. For Render, deploy this repo as a Docker web service and set `ASPNETCORE_URLS` to `http://0.0.0.0:10000`.

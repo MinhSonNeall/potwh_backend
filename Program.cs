@@ -13,8 +13,10 @@ string checksumKey = payosCfg["ChecksumKey"] ?? "";
 
 // Public base URL of this server, for example your ngrok HTTPS URL.
 string appBaseUrl = (builder.Configuration["AppBaseUrl"] ?? "http://localhost:5000").TrimEnd('/');
-string dataFilePath = builder.Configuration["DataFilePath"]
-    ?? Path.Combine(builder.Environment.ContentRootPath, "App_Data", "payos-store.json");
+string databaseUrl = builder.Configuration["DATABASE_URL"]
+    ?? builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? throw new InvalidOperationException(
+        "Missing database connection string. Set DATABASE_URL or ConnectionStrings:DefaultConnection.");
 
 var packages = builder.Configuration.GetSection("CoinPackages").Get<List<CoinPackage>>()
     ?? new List<CoinPackage>();
@@ -26,7 +28,9 @@ var payOS = new PayOSClient(new PayOSOptions
     ChecksumKey = checksumKey,
 });
 
-var store = new Store(dataFilePath);
+var store = new Store(databaseUrl);
+await store.InitializeAsync();
+
 builder.Services.AddSingleton(payOS);
 builder.Services.AddSingleton(store);
 builder.Services.AddSingleton(packages);
@@ -34,14 +38,14 @@ builder.Services.AddSingleton(packages);
 var app = builder.Build();
 
 // PayOS orderCode must be unique. Keep it above persisted orders across restarts.
-long orderCounter = Math.Max(DateTimeOffset.UtcNow.ToUnixTimeSeconds(), store.MaxOrderCode);
+long orderCounter = Math.Max(DateTimeOffset.UtcNow.ToUnixTimeSeconds(), await store.GetMaxOrderCodeAsync());
 
 app.MapGet("/", () => "PayosServer is running.");
 
 app.MapGet("/api/packages", (List<CoinPackage> pkgs) => Results.Ok(pkgs));
 
-app.MapGet("/api/users/{userId}/balance", (string userId, Store s) =>
-    Results.Ok(new { userId, coins = s.GetBalance(userId) }));
+app.MapGet("/api/users/{userId}/balance", async (string userId, Store s) =>
+    Results.Ok(new { userId, coins = await s.GetBalanceAsync(userId) }));
 
 app.MapPost("/api/orders/create",
     async (CreateOrderRequest req, PayOSClient pay, Store s, List<CoinPackage> pkgs) =>
@@ -64,7 +68,7 @@ app.MapPost("/api/orders/create",
         AmountVnd = pkg.PriceVnd,
         Status = "PENDING",
     };
-    s.SaveOrder(order);
+    await s.SaveOrderAsync(order);
 
     var paymentRequest = new CreatePaymentLinkRequest
     {
@@ -91,14 +95,14 @@ app.MapPost("/api/orders/create",
     catch (Exception ex)
     {
         order.Status = "CREATE_FAILED";
-        s.SaveOrder(order);
+        await s.SaveOrderAsync(order);
         return Results.Problem($"PayOS createPaymentLink failed: {ex.Message}");
     }
 });
 
-app.MapGet("/api/orders/{orderCode:long}/status", (long orderCode, Store s) =>
+app.MapGet("/api/orders/{orderCode:long}/status", async (long orderCode, Store s) =>
 {
-    var order = s.GetOrder(orderCode);
+    var order = await s.GetOrderAsync(orderCode);
     return order is null
         ? Results.NotFound(new { error = "Unknown orderCode" })
         : Results.Ok(new
@@ -132,16 +136,14 @@ app.MapPost("/payos-webhook", async (Webhook body, PayOSClient pay, Store s) =>
         return Results.Ok(new { received = true });
     }
 
-    bool credited = s.TryMarkPaidAndCredit(
+    CreditResult creditResult = await s.TryMarkPaidAndCreditAsync(
         data.OrderCode,
         data.Amount,
-        data.Currency,
-        out var order,
-        out string reason);
+        data.Currency);
 
     Console.WriteLine(
-        $"[webhook] order={data.OrderCode}, user={order?.UserId ?? "unknown"}, " +
-        $"amount={data.Amount} {data.Currency}, credited={credited}, reason={reason}");
+        $"[webhook] order={data.OrderCode}, user={creditResult.Order?.UserId ?? "unknown"}, " +
+        $"amount={data.Amount} {data.Currency}, credited={creditResult.Credited}, reason={creditResult.Reason}");
 
     return Results.Ok(new { received = true });
 });
@@ -151,9 +153,9 @@ app.MapGet("/pay/success", (long orderCode) =>
         $"<h2>Thanh toan thanh cong!</h2><p>Ma don: {orderCode}. Ban co the quay lai game.</p>",
         "text/html"));
 
-app.MapGet("/pay/cancel", (long orderCode, Store s) =>
+app.MapGet("/pay/cancel", async (long orderCode, Store s) =>
 {
-    s.MarkCancelled(orderCode);
+    await s.MarkCancelledAsync(orderCode);
     return Results.Content(
         $"<h2>Da huy thanh toan.</h2><p>Ma don: {orderCode}.</p>",
         "text/html");

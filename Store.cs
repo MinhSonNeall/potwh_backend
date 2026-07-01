@@ -1,143 +1,272 @@
-using System.Collections.Concurrent;
-using System.Text.Json;
+using Npgsql;
 
 namespace PayosServer;
 
-/// <summary>
-/// Small file-backed store for orders and user coin balances.
-/// This keeps local/dev payments across server restarts. For production,
-/// replace this with a transactional database (EF Core + SQL Server/Postgres).
-/// </summary>
+/// <summary>PostgreSQL-backed store for orders and user coin balances.</summary>
 public class Store
 {
-    private readonly ConcurrentDictionary<long, Order> _orders = new();
-    private readonly ConcurrentDictionary<string, int> _balances = new();
-    private readonly object _creditLock = new();
-    private readonly string _dataFilePath;
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
-    {
-        WriteIndented = true,
-    };
+    private readonly NpgsqlDataSource _dataSource;
 
-    public Store(string dataFilePath)
+    public Store(string connectionString)
     {
-        _dataFilePath = dataFilePath;
-        Load();
+        _dataSource = NpgsqlDataSource.Create(NormalizeConnectionString(connectionString));
     }
 
-    public long MaxOrderCode => _orders.Keys.DefaultIfEmpty(0).Max();
-
-    public void SaveOrder(Order order)
+    public async Task InitializeAsync()
     {
-        _orders[order.OrderCode] = order;
-        Persist();
+        const string sql = """
+            CREATE TABLE IF NOT EXISTS orders (
+                order_code BIGINT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                package_id TEXT NOT NULL,
+                coins INTEGER NOT NULL CHECK (coins >= 0),
+                amount_vnd INTEGER NOT NULL CHECK (amount_vnd >= 0),
+                status TEXT NOT NULL,
+                credited BOOLEAN NOT NULL DEFAULT FALSE,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+
+            CREATE TABLE IF NOT EXISTS balances (
+                user_id TEXT PRIMARY KEY,
+                coins INTEGER NOT NULL DEFAULT 0 CHECK (coins >= 0),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders (user_id);
+            """;
+
+        await using var command = _dataSource.CreateCommand(sql);
+        await command.ExecuteNonQueryAsync();
     }
 
-    public Order? GetOrder(long orderCode) =>
-        _orders.TryGetValue(orderCode, out var order) ? order : null;
+    public async Task<long> GetMaxOrderCodeAsync()
+    {
+        const string sql = "SELECT COALESCE(MAX(order_code), 0) FROM orders;";
+        await using var command = _dataSource.CreateCommand(sql);
+        object? result = await command.ExecuteScalarAsync();
+        return result is null or DBNull ? 0 : Convert.ToInt64(result);
+    }
 
-    public int GetBalance(string userId) =>
-        _balances.TryGetValue(userId, out var coins) ? coins : 0;
+    public async Task SaveOrderAsync(Order order)
+    {
+        const string sql = """
+            INSERT INTO orders (
+                order_code,
+                user_id,
+                package_id,
+                coins,
+                amount_vnd,
+                status,
+                credited
+            )
+            VALUES (
+                @order_code,
+                @user_id,
+                @package_id,
+                @coins,
+                @amount_vnd,
+                @status,
+                @credited
+            )
+            ON CONFLICT (order_code) DO UPDATE SET
+                user_id = EXCLUDED.user_id,
+                package_id = EXCLUDED.package_id,
+                coins = EXCLUDED.coins,
+                amount_vnd = EXCLUDED.amount_vnd,
+                status = EXCLUDED.status,
+                credited = EXCLUDED.credited,
+                updated_at = now();
+            """;
+
+        await using var command = _dataSource.CreateCommand(sql);
+        AddOrderParameters(command, order);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    public async Task<Order?> GetOrderAsync(long orderCode)
+    {
+        const string sql = """
+            SELECT order_code, user_id, package_id, coins, amount_vnd, status, credited
+            FROM orders
+            WHERE order_code = @order_code;
+            """;
+
+        await using var command = _dataSource.CreateCommand(sql);
+        command.Parameters.AddWithValue("order_code", orderCode);
+
+        await using var reader = await command.ExecuteReaderAsync();
+        return await reader.ReadAsync() ? ReadOrder(reader) : null;
+    }
+
+    public async Task<int> GetBalanceAsync(string userId)
+    {
+        const string sql = "SELECT coins FROM balances WHERE user_id = @user_id;";
+        await using var command = _dataSource.CreateCommand(sql);
+        command.Parameters.AddWithValue("user_id", userId);
+
+        object? result = await command.ExecuteScalarAsync();
+        return result is null or DBNull ? 0 : Convert.ToInt32(result);
+    }
 
     /// <summary>
     /// Mark an order PAID and credit its coins exactly once.
-    /// Returns true if coins were credited by this call. False is expected for
-    /// webhook retries, mismatched payment data, and unknown orders.
+    /// Returns false for webhook retries, mismatched payment data, and unknown orders.
     /// </summary>
-    public bool TryMarkPaidAndCredit(
+    public async Task<CreditResult> TryMarkPaidAndCreditAsync(
         long orderCode,
         long paidAmountVnd,
-        string? currency,
-        out Order? order,
-        out string reason)
+        string? currency)
     {
-        lock (_creditLock)
+        await using var connection = await _dataSource.OpenConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+
+        const string selectSql = """
+            SELECT order_code, user_id, package_id, coins, amount_vnd, status, credited
+            FROM orders
+            WHERE order_code = @order_code
+            FOR UPDATE;
+            """;
+
+        await using var selectCommand = new NpgsqlCommand(selectSql, connection, transaction);
+        selectCommand.Parameters.AddWithValue("order_code", orderCode);
+
+        await using var reader = await selectCommand.ExecuteReaderAsync();
+        if (!await reader.ReadAsync())
         {
-            if (!_orders.TryGetValue(orderCode, out order))
-            {
-                reason = "unknown_order";
-                return false;
-            }
-
-            if (order.Credited)
-            {
-                reason = "already_credited";
-                return false;
-            }
-
-            if (!string.Equals(currency, "VND", StringComparison.OrdinalIgnoreCase))
-            {
-                reason = $"currency_mismatch:{currency}";
-                return false;
-            }
-
-            if (paidAmountVnd != order.AmountVnd)
-            {
-                reason = $"amount_mismatch:paid={paidAmountVnd},expected={order.AmountVnd}";
-                return false;
-            }
-
-            int coinsToCredit = order.Coins;
-            order.Status = "PAID";
-            order.Credited = true;
-            _balances.AddOrUpdate(order.UserId, coinsToCredit, (_, current) => current + coinsToCredit);
-            Persist();
-            reason = "credited";
-            return true;
+            await transaction.CommitAsync();
+            return new CreditResult(false, null, "unknown_order");
         }
-    }
 
-    public void MarkCancelled(long orderCode)
-    {
-        if (_orders.TryGetValue(orderCode, out var order) && !order.Credited)
+        Order order = ReadOrder(reader);
+        await reader.CloseAsync();
+
+        if (order.Credited)
         {
-            order.Status = "CANCELLED";
-            Persist();
+            await transaction.CommitAsync();
+            return new CreditResult(false, order, "already_credited");
         }
-    }
 
-    private void Load()
-    {
-        if (!File.Exists(_dataFilePath)) return;
-
-        string json = File.ReadAllText(_dataFilePath);
-        if (string.IsNullOrWhiteSpace(json)) return;
-
-        var snapshot = JsonSerializer.Deserialize<StoreSnapshot>(json, JsonOptions);
-        if (snapshot is null) return;
-
-        foreach (var order in snapshot.Orders)
-            _orders[order.OrderCode] = order;
-
-        foreach (var balance in snapshot.Balances)
-            _balances[balance.Key] = balance.Value;
-    }
-
-    private void Persist()
-    {
-        string? dir = Path.GetDirectoryName(_dataFilePath);
-        if (!string.IsNullOrWhiteSpace(dir))
-            Directory.CreateDirectory(dir);
-
-        var snapshot = new StoreSnapshot
+        if (!string.Equals(currency, "VND", StringComparison.OrdinalIgnoreCase))
         {
-            Orders = _orders.Values.OrderBy(order => order.OrderCode).ToList(),
-            Balances = _balances.OrderBy(balance => balance.Key)
-                .ToDictionary(balance => balance.Key, balance => balance.Value),
+            await transaction.CommitAsync();
+            return new CreditResult(false, order, $"currency_mismatch:{currency}");
+        }
+
+        if (paidAmountVnd != order.AmountVnd)
+        {
+            await transaction.CommitAsync();
+            return new CreditResult(false, order, $"amount_mismatch:paid={paidAmountVnd},expected={order.AmountVnd}");
+        }
+
+        const string updateOrderSql = """
+            UPDATE orders
+            SET status = 'PAID',
+                credited = TRUE,
+                updated_at = now()
+            WHERE order_code = @order_code;
+            """;
+
+        await using (var updateOrderCommand = new NpgsqlCommand(updateOrderSql, connection, transaction))
+        {
+            updateOrderCommand.Parameters.AddWithValue("order_code", orderCode);
+            await updateOrderCommand.ExecuteNonQueryAsync();
+        }
+
+        const string updateBalanceSql = """
+            INSERT INTO balances (user_id, coins)
+            VALUES (@user_id, @coins)
+            ON CONFLICT (user_id) DO UPDATE SET
+                coins = balances.coins + EXCLUDED.coins,
+                updated_at = now();
+            """;
+
+        await using (var updateBalanceCommand = new NpgsqlCommand(updateBalanceSql, connection, transaction))
+        {
+            updateBalanceCommand.Parameters.AddWithValue("user_id", order.UserId);
+            updateBalanceCommand.Parameters.AddWithValue("coins", order.Coins);
+            await updateBalanceCommand.ExecuteNonQueryAsync();
+        }
+
+        await transaction.CommitAsync();
+
+        order.Status = "PAID";
+        order.Credited = true;
+        return new CreditResult(true, order, "credited");
+    }
+
+    public async Task MarkCancelledAsync(long orderCode)
+    {
+        const string sql = """
+            UPDATE orders
+            SET status = 'CANCELLED',
+                updated_at = now()
+            WHERE order_code = @order_code
+              AND credited = FALSE;
+            """;
+
+        await using var command = _dataSource.CreateCommand(sql);
+        command.Parameters.AddWithValue("order_code", orderCode);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static void AddOrderParameters(NpgsqlCommand command, Order order)
+    {
+        command.Parameters.AddWithValue("order_code", order.OrderCode);
+        command.Parameters.AddWithValue("user_id", order.UserId);
+        command.Parameters.AddWithValue("package_id", order.PackageId);
+        command.Parameters.AddWithValue("coins", order.Coins);
+        command.Parameters.AddWithValue("amount_vnd", order.AmountVnd);
+        command.Parameters.AddWithValue("status", order.Status);
+        command.Parameters.AddWithValue("credited", order.Credited);
+    }
+
+    private static Order ReadOrder(NpgsqlDataReader reader) => new()
+    {
+        OrderCode = reader.GetInt64(0),
+        UserId = reader.GetString(1),
+        PackageId = reader.GetString(2),
+        Coins = reader.GetInt32(3),
+        AmountVnd = reader.GetInt32(4),
+        Status = reader.GetString(5),
+        Credited = reader.GetBoolean(6),
+    };
+
+    private static string NormalizeConnectionString(string connectionString)
+    {
+        string trimmed = connectionString.Trim();
+        if (!trimmed.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase)
+            && !trimmed.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
+        {
+            return trimmed;
+        }
+
+        var uri = new Uri(trimmed);
+        string[] userInfo = uri.UserInfo.Split(':', 2);
+        string username = Uri.UnescapeDataString(userInfo.ElementAtOrDefault(0) ?? "");
+        string password = Uri.UnescapeDataString(userInfo.ElementAtOrDefault(1) ?? "");
+        string database = Uri.UnescapeDataString(uri.AbsolutePath.TrimStart('/'));
+        bool isLocal = uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+            || uri.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase)
+            || uri.Host.Equals("::1", StringComparison.OrdinalIgnoreCase);
+
+        var builder = new NpgsqlConnectionStringBuilder
+        {
+            Host = uri.Host,
+            Port = uri.Port > 0 ? uri.Port : 5432,
+            Username = username,
+            Password = password,
+            Database = database,
+            Pooling = true,
         };
 
-        string tmpPath = _dataFilePath + ".tmp";
-        File.WriteAllText(tmpPath, JsonSerializer.Serialize(snapshot, JsonOptions));
+        if (!isLocal)
+        {
+            builder.SslMode = SslMode.Require;
+        }
 
-        if (File.Exists(_dataFilePath))
-            File.Replace(tmpPath, _dataFilePath, null);
-        else
-            File.Move(tmpPath, _dataFilePath);
-    }
-
-    private sealed class StoreSnapshot
-    {
-        public List<Order> Orders { get; set; } = new();
-        public Dictionary<string, int> Balances { get; set; } = new();
+        return builder.ConnectionString;
     }
 }
+
+public sealed record CreditResult(bool Credited, Order? Order, string Reason);

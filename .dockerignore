@@ -1,0 +1,6 @@
+bin/
+obj/
+.git/
+App_Data/
+appsettings.Development.json
+appsettings.Production.json
