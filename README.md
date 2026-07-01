@@ -57,3 +57,14 @@ dotnet run
 ## Notes
 
 Orders and balances are stored in PostgreSQL. For Render, deploy this repo as a Docker web service and set `ASPNETCORE_URLS` to `http://0.0.0.0:10000`.
+
+## Local dashboard (POTWH_data)
+
+Static dashboard for quick inspection is in the `POTWH_data` folder:
+
+- Open `POTWH_data/index.html` directly in browser.
+- It reads data from:
+  - `/api/packages`
+  - `/api/users/{userId}/balance`
+  - `/api/orders/{orderCode}/status`
+- Make sure backend allows CORS (already configured in `Program.cs`).

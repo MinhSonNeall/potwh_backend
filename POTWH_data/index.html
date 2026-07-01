@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>POTWH Data Dashboard</title>
+    <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>POTWH Data Dashboard</h1>
+            <p>Giao diện tĩnh lấy dữ liệu trực tiếp từ backend Render.</p>
+        </header>
+
+        <section class="card">
+            <h2>Kết nối API</h2>
+            <label for="apiBase">Base API URL</label>
+            <input id="apiBase" type="text" value="https://potwh-backend.onrender.com" />
+            <div class="actions">
+                <button id="btnHealth">Kiểm tra sức khỏe</button>
+                <span id="healthStatus" class="status">Chưa kiểm tra</span>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>Gói nạp hiện có</h2>
+            <div class="actions">
+                <button id="btnPackages">Lấy gói</button>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Id</th>
+                        <th>Tên gói</th>
+                        <th>Coin</th>
+                        <th>Giá (VND)</th>
+                    </tr>
+                </thead>
+                <tbody id="packageBody">
+                    <tr><td colspan="4">Chưa tải dữ liệu</td></tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section class="grid-2">
+            <div class="card">
+                <h2>Số dư người chơi</h2>
+                <label for="userIdInput">User ID</label>
+                <input id="userIdInput" type="text" placeholder="vd: user_123" />
+                <div class="actions">
+                    <button id="btnBalance">Tra số dư</button>
+                </div>
+                <p id="balanceResult" class="result">Nhập User ID rồi bấm tra số dư.</p>
+            </div>
+
+            <div class="card">
+                <h2>Tra trạng thái đơn hàng</h2>
+                <label for="orderCodeInput">Order Code</label>
+                <input id="orderCodeInput" type="number" placeholder="vd: 171985..." />
+                <div class="actions">
+                    <button id="btnOrder">Tra đơn</button>
+                </div>
+                <p id="orderResult" class="result">Nhập mã đơn rồi bấm tra trạng thái.</p>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>Nhật ký</h2>
+            <pre id="log"></pre>
+        </section>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
