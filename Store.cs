@@ -134,6 +134,7 @@ public class Store
         await using var reader = await selectCommand.ExecuteReaderAsync();
         if (!await reader.ReadAsync())
         {
+            await reader.CloseAsync();
             await transaction.CommitAsync();
             return new CreditResult(false, null, "unknown_order");
         }
