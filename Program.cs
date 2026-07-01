@@ -30,9 +30,14 @@ var payOS = new PayOSClient(new PayOSOptions
 
 builder.Services.AddCors(options =>
 {
+    options.AddDefaultPolicy(policy =>
+    {
+        policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
+    });
+
     options.AddPolicy("AllowAll", policy =>
     {
-        policy.SetIsOriginAllowed(_ => true).AllowAnyHeader().AllowAnyMethod();
+        policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
     });
 });
 
@@ -44,7 +49,7 @@ builder.Services.AddSingleton(store);
 builder.Services.AddSingleton(packages);
 
 var app = builder.Build();
-app.UseCors("AllowAll");
+app.UseCors();
 
 // PayOS orderCode must be unique. Keep it above persisted orders across restarts.
 long orderCounter = Math.Max(DateTimeOffset.UtcNow.ToUnixTimeSeconds(), await store.GetMaxOrderCodeAsync());
