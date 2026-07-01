@@ -99,6 +99,56 @@ public class Store
         return await reader.ReadAsync() ? ReadOrder(reader) : null;
     }
 
+    public async Task<IReadOnlyList<OrderView>> GetOrdersAsync()
+    {
+        const string sql = """
+            SELECT order_code, user_id, package_id, coins, amount_vnd, status, credited, created_at, updated_at
+            FROM orders
+            ORDER BY created_at DESC, order_code DESC;
+            """;
+
+        await using var command = _dataSource.CreateCommand(sql);
+        await using var reader = await command.ExecuteReaderAsync();
+
+        var orders = new List<OrderView>();
+        while (await reader.ReadAsync())
+        {
+            orders.Add(ReadOrderView(reader));
+        }
+        return orders;
+    }
+
+    public async Task<OrdersSummary> GetOrdersSummaryAsync()
+    {
+        const string sql = """
+            SELECT
+                COUNT(*) AS total_orders,
+                COALESCE(SUM(amount_vnd), 0) AS total_amount_vnd,
+                COALESCE(SUM(amount_vnd) FILTER (WHERE status = 'PAID'), 0) AS total_paid_amount_vnd,
+                COALESCE(SUM(coins), 0) AS total_coins,
+                COUNT(*) FILTER (WHERE status = 'PENDING') AS pending_orders,
+                COUNT(*) FILTER (WHERE status = 'PAID') AS paid_orders,
+                COUNT(*) FILTER (WHERE status = 'CANCELLED') AS cancelled_orders,
+                COUNT(*) FILTER (WHERE status = 'CREATE_FAILED') AS failed_orders
+            FROM orders;
+            """;
+
+        await using var command = _dataSource.CreateCommand(sql);
+        await using var reader = await command.ExecuteReaderAsync();
+        if (!await reader.ReadAsync())
+            return new OrdersSummary(0, 0, 0, 0, 0, 0, 0, 0);
+
+        return new OrdersSummary(
+            (int)(reader.IsDBNull(0) ? 0L : reader.GetInt64(0)),
+            reader.IsDBNull(1) ? 0L : reader.GetInt64(1),
+            reader.IsDBNull(2) ? 0L : reader.GetInt64(2),
+            (int)(reader.IsDBNull(3) ? 0L : reader.GetInt64(3)),
+            (int)(reader.IsDBNull(4) ? 0L : reader.GetInt64(4)),
+            (int)(reader.IsDBNull(5) ? 0L : reader.GetInt64(5)),
+            (int)(reader.IsDBNull(6) ? 0L : reader.GetInt64(6)),
+            (int)(reader.IsDBNull(7) ? 0L : reader.GetInt64(7)));
+    }
+
     public async Task<int> GetBalanceAsync(string userId)
     {
         const string sql = "SELECT coins FROM balances WHERE user_id = @user_id;";
@@ -232,6 +282,17 @@ public class Store
         Status = reader.GetString(5),
         Credited = reader.GetBoolean(6),
     };
+
+    private static OrderView ReadOrderView(NpgsqlDataReader reader) => new(
+        reader.GetInt64(0),
+        reader.GetString(1),
+        reader.GetString(2),
+        reader.GetInt32(3),
+        reader.GetInt32(4),
+        reader.GetString(5),
+        reader.GetBoolean(6),
+        new DateTimeOffset(reader.GetDateTime(7), TimeSpan.Zero),
+        new DateTimeOffset(reader.GetDateTime(8), TimeSpan.Zero));
 
     private static string NormalizeConnectionString(string connectionString)
     {

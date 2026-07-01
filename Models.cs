@@ -23,3 +23,26 @@ public class Order
     public string Status { get; set; } = "PENDING"; // PENDING | PAID | CANCELLED
     public bool Credited { get; set; }              // guards against double-crediting
 }
+
+/// <summary>Order row returned for dashboard/table use.</summary>
+public sealed record OrderView(
+    long OrderCode,
+    string UserId,
+    string PackageId,
+    int Coins,
+    int AmountVnd,
+    string Status,
+    bool Credited,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt);
+
+/// <summary>Order summary aggregation for dashboard metrics.</summary>
+public sealed record OrdersSummary(
+    int TotalOrders,
+    long TotalAmountVnd,
+    long TotalAmountPaidVnd,
+    int TotalCoins,
+    int PendingOrders,
+    int PaidOrders,
+    int CancelledOrders,
+    int FailedOrders);

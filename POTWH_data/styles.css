@@ -77,9 +77,38 @@ button:hover {
     font-size: 14px;
 }
 
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+}
+
+.stat {
+    background: #f8faff;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px 12px;
+}
+
+.stat h3 {
+    margin: 0;
+    font-size: 13px;
+    color: var(--muted);
+}
+
+.stat p {
+    margin: 8px 0 0;
+    font-weight: 700;
+    color: var(--text);
+}
+
 .result {
     margin: 12px 0 0;
     color: var(--muted);
+}
+
+.table-wrap {
+    overflow-x: auto;
 }
 
 table {

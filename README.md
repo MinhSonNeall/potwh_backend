@@ -51,6 +51,8 @@ dotnet run
 - `GET /api/users/{userId}/balance` - get a user's coin balance
 - `POST /api/orders/create` - create a PayOS payment link
 - `GET /api/orders/{orderCode}/status` - get order status
+- `GET /api/orders` - list all orders (newest first)
+- `GET /api/orders/summary` - totals and order counts for dashboard
 - `POST /payos-webhook` - PayOS webhook endpoint
 - `POST /api/confirm-webhook?url={publicWebhookUrl}` - register a PayOS webhook URL
 

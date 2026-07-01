@@ -10,63 +10,130 @@
     <div class="container">
         <header>
             <h1>POTWH Data Dashboard</h1>
-            <p>Giao diện tĩnh lấy dữ liệu trực tiếp từ backend Render.</p>
+            <p>Dashboard doc du lieu truc tiep tu backend.</p>
         </header>
 
         <section class="card">
-            <h2>Kết nối API</h2>
+            <h2>Ket noi API</h2>
             <label for="apiBase">Base API URL</label>
             <input id="apiBase" type="text" value="https://potwh-backend.onrender.com" />
             <div class="actions">
-                <button id="btnHealth">Kiểm tra sức khỏe</button>
-                <span id="healthStatus" class="status">Chưa kiểm tra</span>
+                <button id="btnHealth">Kiem tra suc khoe</button>
+                <span id="healthStatus" class="status">Chua kiem tra</span>
             </div>
         </section>
 
         <section class="card">
-            <h2>Gói nạp hiện có</h2>
-            <div class="actions">
-                <button id="btnPackages">Lấy gói</button>
+            <h2>Thong ke don hang</h2>
+            <div class="stats-grid">
+                <div class="stat">
+                    <h3>Tong don hang</h3>
+                    <p id="statTotalOrders">-</p>
+                </div>
+                <div class="stat">
+                    <h3>Tong gia tri</h3>
+                    <p id="statTotalAmount">-</p>
+                </div>
+                <div class="stat">
+                    <h3>Tong da thanh toan</h3>
+                    <p id="statPaidAmount">-</p>
+                </div>
+                <div class="stat">
+                    <h3>Tong coin cap</h3>
+                    <p id="statTotalCoins">-</p>
+                </div>
+                <div class="stat">
+                    <h3>Cho thanh toan</h3>
+                    <p id="statPending">-</p>
+                </div>
+                <div class="stat">
+                    <h3>Da thanh toan</h3>
+                    <p id="statPaid">-</p>
+                </div>
+                <div class="stat">
+                    <h3>Da huy</h3>
+                    <p id="statCancelled">-</p>
+                </div>
+                <div class="stat">
+                    <h3>Tao that bai</h3>
+                    <p id="statFailed">-</p>
+                </div>
             </div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Id</th>
-                        <th>Tên gói</th>
-                        <th>Coin</th>
-                        <th>Giá (VND)</th>
-                    </tr>
-                </thead>
-                <tbody id="packageBody">
-                    <tr><td colspan="4">Chưa tải dữ liệu</td></tr>
-                </tbody>
-            </table>
+        </section>
+
+        <section class="card">
+            <h2>Goi nap hien co</h2>
+            <div class="actions">
+                <button id="btnPackages">Tai goi</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Id</th>
+                            <th>Ten goi</th>
+                            <th>Coin</th>
+                            <th>Gia (VND)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="packageBody">
+                        <tr><td colspan="4">Chua tai du lieu</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>Danh sach tat ca don hang</h2>
+            <div class="actions">
+                <button id="btnOrders">Tai danh sach</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>OrderCode</th>
+                            <th>User</th>
+                            <th>Package</th>
+                            <th>Coin</th>
+                            <th>Amount (VND)</th>
+                            <th>Status</th>
+                            <th>Credited</th>
+                            <th>Created</th>
+                            <th>Updated</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ordersBody">
+                        <tr><td colspan="9">Chua tai du lieu</td></tr>
+                    </tbody>
+                </table>
+            </div>
         </section>
 
         <section class="grid-2">
             <div class="card">
-                <h2>Số dư người chơi</h2>
+                <h2>So du nguoi choi</h2>
                 <label for="userIdInput">User ID</label>
                 <input id="userIdInput" type="text" placeholder="vd: user_123" />
                 <div class="actions">
-                    <button id="btnBalance">Tra số dư</button>
+                    <button id="btnBalance">Tra so du</button>
                 </div>
-                <p id="balanceResult" class="result">Nhập User ID rồi bấm tra số dư.</p>
+                <p id="balanceResult" class="result">Nhap User ID roi bam tra so du.</p>
             </div>
 
             <div class="card">
-                <h2>Tra trạng thái đơn hàng</h2>
+                <h2>Tra trang thai don hang</h2>
                 <label for="orderCodeInput">Order Code</label>
                 <input id="orderCodeInput" type="number" placeholder="vd: 171985..." />
                 <div class="actions">
-                    <button id="btnOrder">Tra đơn</button>
+                    <button id="btnOrder">Tra don</button>
                 </div>
-                <p id="orderResult" class="result">Nhập mã đơn rồi bấm tra trạng thái.</p>
+                <p id="orderResult" class="result">Nhap ma don roi bam tra trang thai.</p>
             </div>
         </section>
 
         <section class="card">
-            <h2>Nhật ký</h2>
+            <h2>Nhat ky</h2>
             <pre id="log"></pre>
         </section>
     </div>

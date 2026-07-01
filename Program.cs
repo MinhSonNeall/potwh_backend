@@ -130,6 +130,18 @@ app.MapGet("/api/orders/{orderCode:long}/status", async (long orderCode, Store s
         });
 });
 
+app.MapGet("/api/orders", async (Store s) =>
+{
+    var orders = await s.GetOrdersAsync();
+    return Results.Ok(orders);
+});
+
+app.MapGet("/api/orders/summary", async (Store s) =>
+{
+    var summary = await s.GetOrdersSummaryAsync();
+    return Results.Ok(summary);
+});
+
 // PayOS calls this endpoint server-to-server. Verify signature before crediting.
 app.MapPost("/payos-webhook", async (Webhook body, PayOSClient pay, Store s) =>
 {
