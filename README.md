@@ -26,8 +26,8 @@ Set these values in `appsettings.Development.json`, user secrets, or your deploy
   },
   "CoinPackages": [
     {
-      "Id": "starter",
-      "Name": "Starter Pack",
+      "Id": "coin_100",
+      "Name": "100 coin",
       "Coins": 100,
       "PriceVnd": 10000
     }
@@ -59,6 +59,22 @@ dotnet run
 ## Notes
 
 Orders and balances are stored in PostgreSQL. For Render, deploy this repo as a Docker web service and set `ASPNETCORE_URLS` to `http://0.0.0.0:10000`.
+
+`POST /api/orders/create` accepts either the old package form:
+
+```json
+{ "userId": "player-id", "packageId": "coin_100" }
+```
+
+or the dynamic coin amount form used by the Unity client:
+
+```json
+{ "userId": "player-id", "packageId": "coin_500", "coins": 500 }
+```
+
+When `coins` is present, it must be a multiple of 100, from 100 to 100000. The
+server prices it from the configured 100 coin package, so the default config is
+100 coin = 10000 VND.
 
 ## Local dashboard (POTWH_data)
 

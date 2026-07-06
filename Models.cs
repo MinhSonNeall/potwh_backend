@@ -10,7 +10,7 @@ public class CoinPackage
 }
 
 /// <summary>Request body for POST /api/orders/create.</summary>
-public record CreateOrderRequest(string UserId, string PackageId);
+public record CreateOrderRequest(string UserId, string? PackageId, int? Coins);
 
 /// <summary>A pending/paid order tracked server-side.</summary>
 public class Order

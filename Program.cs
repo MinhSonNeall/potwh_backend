@@ -53,6 +53,9 @@ app.UseCors();
 
 // PayOS orderCode must be unique. Keep it above persisted orders across restarts.
 long orderCounter = Math.Max(DateTimeOffset.UtcNow.ToUnixTimeSeconds(), await store.GetMaxOrderCodeAsync());
+const int CoinStep = 100;
+const int MinTopUpCoins = 100;
+const int MaxTopUpCoins = 100000;
 
 app.MapGet("/", () => "PayosServer is running.");
 
@@ -64,12 +67,17 @@ app.MapGet("/api/users/{userId}/balance", async (string userId, Store s) =>
 app.MapPost("/api/orders/create",
     async (CreateOrderRequest req, PayOSClient pay, Store s, List<CoinPackage> pkgs) =>
 {
-    var pkg = pkgs.FirstOrDefault(p => p.Id == req.PackageId);
-    if (pkg is null)
-        return Results.BadRequest(new { error = "Unknown packageId" });
-
     if (string.IsNullOrWhiteSpace(req.UserId))
         return Results.BadRequest(new { error = "Missing userId" });
+
+    var pkg = ResolveCoinPackage(req, pkgs);
+    if (pkg is null)
+    {
+        return Results.BadRequest(new
+        {
+            error = $"coins must be a multiple of {CoinStep}, from {MinTopUpCoins} to {MaxTopUpCoins}"
+        });
+    }
 
     long orderCode = Interlocked.Increment(ref orderCounter);
 
@@ -201,3 +209,51 @@ app.MapPost("/api/confirm-webhook", async ([FromQuery] string url, PayOSClient p
 });
 
 app.Run();
+
+static CoinPackage? ResolveCoinPackage(CreateOrderRequest req, List<CoinPackage> packages)
+{
+    int unitPriceVnd = GetCoinStepPriceVnd(packages);
+
+    if (req.Coins.HasValue)
+    {
+        int coins = req.Coins.Value;
+        if (!IsValidTopUpCoins(coins))
+            return null;
+
+        return new CoinPackage
+        {
+            Id = $"coin_{coins}",
+            Name = $"{coins} coin",
+            Coins = coins,
+            PriceVnd = coins / CoinStep * unitPriceVnd,
+        };
+    }
+
+    if (string.IsNullOrWhiteSpace(req.PackageId))
+        return null;
+
+    var configured = packages.FirstOrDefault(p => string.Equals(p.Id, req.PackageId, StringComparison.OrdinalIgnoreCase));
+    if (configured is null || !IsValidTopUpCoins(configured.Coins))
+        return null;
+
+    return configured;
+}
+
+static bool IsValidTopUpCoins(int coins)
+{
+    return coins >= MinTopUpCoins && coins <= MaxTopUpCoins && coins % CoinStep == 0;
+}
+
+static int GetCoinStepPriceVnd(List<CoinPackage> packages)
+{
+    var basePackage = packages.FirstOrDefault(p => p.Coins == CoinStep && p.PriceVnd > 0);
+    if (basePackage is not null)
+        return basePackage.PriceVnd;
+
+    var package = packages
+        .Where(p => p.Coins > 0 && p.PriceVnd > 0 && p.Coins % CoinStep == 0)
+        .OrderBy(p => p.Coins)
+        .FirstOrDefault();
+
+    return package is null ? 10000 : package.PriceVnd / (package.Coins / CoinStep);
+}
